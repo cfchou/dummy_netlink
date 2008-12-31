@@ -1,0 +1,21 @@
+
+I found that there are good samples in kernel document folder.
+e.g.
+NETLINK_CONNECTOR:
+	linux/Documentation/connector/
+NETLINK_GENERIC:
+	linux/Documentation/accounting/
+
+and one from linux foundation
+http://www.linuxfoundation.org/en/Net:Generic_Netlink_HOWTO
+
+libnl
+http://people.suug.ch/~tgr/libnl/
+
+In general we should use NETLINK_CONNECTOR or NETLINK_GENERIC.
+But here I just want to touch the 'raw' netlink.
+
+bash> cd /path/to/module-source/
+bash> echo "obj-m += dummy_netlink.ko" > Makefile
+bash> make -C /usr/src/linux/ M=/root/src/dummy_netlink modules
+bash> insmod ./dummy_netlink recvin_groups=1
