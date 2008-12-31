@@ -14,10 +14,11 @@
 #include <sys/types.h>
 #include "nlk.h"
 
-#define print_usage()					\
-do {							\
-	fprintf(stderr, "Usage: %s [-g groups]\n",	\
-		argv[0]);				\
+#define print_usage()						\
+do {								\
+	fprintf(stderr, "Usage: %s [-g groups]\n",		\
+		argv[0]);					\
+	fprintf(stderr, "-g groups: default 0\n");	\
 } while (0)
 //
 volatile sig_atomic_t stop = 0;
@@ -41,15 +42,7 @@ int main(int argc, char *argv[])
 	while ((opt = getopt(argc, argv, "g:")) != -1) {
 		switch (opt) {
 		case 'g':
-			// can be
-			// 1 == NLK_GMASK_R
-			// 2 == NLK_GMASK_W
-			// 3 == NLK_GROUP, means 1 + 2
 			recvin_groups = atoi(optarg);
-			if (recvin_groups > NLK_GROUP) {
-				print_usage();
-				return -1;
-			}
 			break;
 		default:
 			print_usage();
@@ -116,7 +109,7 @@ void data_input(char *buff, size_t sz)
 			nlh->nlmsg_seq, nlh->nlmsg_pid);
 
 		pdb = (struct dumb *)NLMSG_DATA(nlh);
-		fprintf(stdout, "[INFO] recv one dumb %c %d\n", pdb->cc,
+		fprintf(stdout, "[INFO] recv one dumb %c %u\n", pdb->cc,
 			pdb->ii);
 
 		if (NLMSG_DONE == nlh->nlmsg_type) { // last one

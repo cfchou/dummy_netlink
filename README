@@ -15,7 +15,64 @@ http://people.suug.ch/~tgr/libnl/
 In general we should use NETLINK_CONNECTOR or NETLINK_GENERIC.
 But here I just want to touch the 'raw' netlink.
 
+
+
+/*
+ * Multicast send/recv in user app
+ */
+Multicast in user app is done by setting sockaddr_nl::nl_groups, which one bit
+represents one group. hence the most we can have 32 groups.
+
+Someone might send one msg to all the groups you bind() with sockaddr_nl::
+nl_groups. You still can only receive one copy of that msg.
+
+/*
+ * Multicast recv in kernel
+ */
+Kernel can join multiple groups by:
+struct sock * netlink_kernel_create(struct net *net, int unit,
+	unsigned int groups,
+	void (*input)(struct sk_buff *skb),
+	struct mutex *cb_mutex, struct module *module)
+The @groups parameter has the same meaning as sockaddr_nl::nl_groups in
+userland.
+
+/*
+ * Multicast send in kernel......?
+ */
+extern int netlink_broadcast(struct sock *ssk, struct sk_buff *skb, u32 pid,
+	u32 group, gfp_t allocation);
+The @group is bit indicator, which only choose one of 32 bits. That is, only
+one of the 32 groups.
+
+As its name suggests, it does *not* multicast, but does broadcast on *one*
+group.
+
+Multicast in kernel space is a bit troublesome. You have to call
+netlink_broadcast many times for every group.
+
+
+// test
+# Kernel join 2 groups(3: 0011). broadcast to 1 group(2: 0010)
+bash> insmod ./dummy_netlink r_grps=3 b_grp=2
+
+# rr_nlk join 2 group(10: 1010) 
+bash> ./rr_nlk -g 10 
+# then rr_nlk should receiv msgs from kernel periodically
+
+# ww_nlk multicast to 1 group(1: 0001)
+bash> ./ww_nlk -g 1
+# kernel receives from ww_nlk and print
+
+# ww_nlk multicast to 2 group(9: 1001)
+bash> ./ww_nlk -g 9
+# kernel and rr_nlk receive from ww_nlk and print
+
+bash> ./ww_nlk -i ${rr_nlk_pid}
+# kernel receives msg from ww_nlk and unicast to rr_nlk
+
+// build
 bash> cd /path/to/module-source/
 bash> echo "obj-m += dummy_netlink.ko" > Makefile
 bash> make -C /usr/src/linux/ M=/root/src/dummy_netlink modules
-bash> insmod ./dummy_netlink recvin_groups=1
+

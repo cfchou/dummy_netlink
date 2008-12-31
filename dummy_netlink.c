@@ -20,18 +20,25 @@ MODULE_AUTHOR("Chou Chifeng <cfchou@gmail.com>");
 MODULE_DESCRIPTION("dummy proc/seq");
 MODULE_ALIAS("dummy_proc");
 
-static unsigned int recvin_groups __read_mostly = NLK_GROUP;
-module_param(recvin_groups, uint, 0600);
-MODULE_PARM_DESC(recvin_groups, "recv in groups[1-3]. default is 3");
+static unsigned int r_grps __read_mostly = NLK_GROUPS;
+module_param(r_grps, uint, 0600);
+MODULE_PARM_DESC(r_grps, "recv in groups. default is 3(2 groups, 0011).");
+
+static unsigned int b_grp __read_mostly = NLK_GROUP_2;
+module_param(b_grp, uint, 0600);
+MODULE_PARM_DESC(b_grp, "broadcast group. default is 2(0010).");
 #define DEBUGP printk
 
 //struct work_struct *writer_work = NULL;
-void nlk_periodic_send(struct work_struct *work);
+static void nlk_periodic_send(struct work_struct *work);
 DECLARE_DELAYED_WORK(writer_work, nlk_periodic_send);
 
 static void nlsk_recv(struct sk_buff *skb);
 static struct sock	*nlsk = NULL;
 static unsigned int kseq = 0;
+
+static int nlk_uni_send(struct sock *nlsk, u32 pid, struct dumb const *pdb,
+	int nonblock);
 
 // recv 2 groups
 // if we're not going to block, we can proceed them all together
@@ -65,10 +72,42 @@ static void nlsk_recv(struct sk_buff *skb)
 		pdb = (struct dumb *)NLMSG_DATA(nlh);
 		DEBUGP(KERN_ALERT "[INFO] recv one dumb %c %d\n", pdb->cc,
 			pdb->ii);
-
+		// unicast back only to user app
+		if (0 != pdb->ii)
+			nlk_uni_send(nlsk, pdb->ii, pdb, 1);
+		
 		if (NLMSG_DONE == nlh->nlmsg_type) // last one
 			break;
 	}
+}
+
+int nlk_uni_send(struct sock *nlsk, u32 pid, struct dumb const *pdb, int nonblock)
+{
+	struct sk_buff *skb = NULL;
+	struct nlmsghdr *nlh = NULL;
+	if (NULL == (skb = alloc_skb(NLMSG_SPACE(sizeof(struct dumb)),
+		GFP_ATOMIC))) {
+		DEBUGP(KERN_ALERT "[ERR] alloc_skb\n");
+		return -ENOMEM;
+	}
+	// __nlmsg_put()
+	nlh = (struct nlmsghdr *)skb_put(skb, NLMSG_SPACE(sizeof(struct dumb)));
+	nlh->nlmsg_type = 0;
+	nlh->nlmsg_len = NLMSG_LENGTH(sizeof(struct dumb));
+	nlh->nlmsg_flags = NLM_F_REQUEST;
+	nlh->nlmsg_pid = 0;		// opaque to netlink core
+	nlh->nlmsg_seq = 0;		// opaque to netlink core
+	memset(NLMSG_DATA(nlh) + sizeof(struct dumb), 0,
+		NLMSG_SPACE(sizeof(struct dumb)) - NLMSG_LENGTH(sizeof(struct dumb)));
+	memcpy(NLMSG_DATA(nlh), pdb, sizeof(struct dumb));
+
+	// could it be optional?
+	/*
+	NETLINK_CB(skb).pid = 0;
+	NETLINK_CB(skb).dst_group = r_grps;
+	*/
+
+	return netlink_unicast(nlsk, skb, pid, nonblock); // 1: non-block
 }
 
 // work_func_t
@@ -119,10 +158,16 @@ void nlk_periodic_send(struct work_struct *work)
 		NLMSG_SPACE(sizeof(struct dumb)) - NLMSG_LENGTH(sizeof(struct dumb)));
 
 	memcpy(NLMSG_DATA(nlh), &db, sizeof(struct dumb));
-	//NETLINK_CB(skb).pid = 0;
-	NETLINK_CB(skb).dst_group = NLK_GROUP;
 
-	if (0 == (ret = netlink_broadcast(nlsk, skb, 0, NLK_GROUP,
+	// could it be optional?
+	/*
+	NETLINK_CB(skb).pid = 0;
+	NETLINK_CB(skb).dst_group = b_grp;
+	*/
+
+	DEBUGP(KERN_ALERT "[INFO] b_grp: %u\n", b_grp);
+
+	if (0 == (ret = netlink_broadcast(nlsk, skb, 0, b_grp,
 		GFP_KERNEL))) {
 		schedule_delayed_work(&writer_work, 15 * HZ); // to keventd
 		return;
@@ -152,23 +197,14 @@ static void dummy_nlk_fini(void);
 
 static int __init dummy_nlk_init(void)
 {
-	DEBUGP(KERN_ALERT "[INFO] recvin_groups: %u\n", recvin_groups);
-	nlsk = netlink_kernel_create(&init_net, NETLINK_TEST, recvin_groups,
+	DEBUGP(KERN_ALERT "[INFO] r_grps: %u\n", r_grps);
+	nlsk = netlink_kernel_create(&init_net, NETLINK_TEST, r_grps,
 		nlsk_recv, NULL, THIS_MODULE);
 	if (!nlsk) {
 		DEBUGP(KERN_ALERT "[ERR] netlink_kernel_create failed!\n");
 		goto fail_init;
 	}
-#if 0
-	// writer only receives group NLK_GMASK_1
-	nlsk_th = netlink_kernel_create(&init_net, NETLINK_TEST, NLK_GMASK_1,
-		nlsk_recv_th, NULL, THIS_MODULE);
-	if (!nlsk_th) {
-		DEBUGP(KERN_ALERT "[ERR] netlink_kernel_create failed!\n");
-		dummy_proc_fini();
-	}
-	struct nlmsghdr;
-#endif
+
 	schedule_delayed_work(&writer_work, 10 * HZ); // to keventd
 	return 0;
 fail_init:

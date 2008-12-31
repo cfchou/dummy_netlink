@@ -12,15 +12,15 @@
 #include <sys/types.h>
 #include "nlk.h"
 
-#define print_usage()								\
-do {										\
+#define print_usage()									\
+do {											\
 	fprintf(stderr, "Usage: %s [-b] [-c char] [-i int] [-p pid] [-g groups]\n",	\
-		argv[0]);							\
-	fprintf(stderr, "-b: explicitly bind()\n");						\
-	fprintf(stderr, "-c char: one char as data to transfer\n");		\
-	fprintf(stderr, "-i int: one char as data to transfer\n");		\
-	fprintf(stderr, "-p pid: target\n");					\
-	fprintf(stderr, "-g groups: [1-3]\n");					\
+		argv[0]);								\
+	fprintf(stderr, "-b: explicitly bind()\n");					\
+	fprintf(stderr, "-c char: one char as data to transfer\n");			\
+	fprintf(stderr, "-i uint: uint  as data to transfer\n");			\
+	fprintf(stderr, "-p pid: target, default 0\n");					\
+	fprintf(stderr, "-g groups: default 0\n");				\
 } while (0)
 
 int main(int argc, char *argv[])
@@ -47,6 +47,7 @@ int main(int argc, char *argv[])
 		switch (opt) {
 		case 'b':
 			bind_me = 1;
+			break;
 		case 'c':
 			db.cc = optarg[0];
 			break;
@@ -58,15 +59,7 @@ int main(int argc, char *argv[])
 			raddr.nl_pid = atoi(optarg);
 			break;
 		case 'g':
-			// can be
-			// 1 == NLK_GMASK_R
-			// 2 == NLK_GMASK_W
-			// 3 == NLK_GROUP, means 1 + 2
 			raddr.nl_groups = atoi(optarg);
-			if (raddr.nl_groups > NLK_GROUP) {
-				print_usage();
-				return -1;
-			}
 			break;
 		default:
 			print_usage();
